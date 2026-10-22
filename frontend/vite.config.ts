@@ -3,7 +3,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/finanzen/' : '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -17,6 +18,11 @@ export default defineConfig({
         target: 'http://localhost:8001',
         changeOrigin: true,
       },
+      '/finanzen/api': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/finanzen\/api/, '/api'),
+      },
     },
   },
-})
+}))

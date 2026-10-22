@@ -6,6 +6,8 @@ import BalanceCard from '../components/BalanceCard'
 import AccountForm from '../components/AccountForm'
 import TransactionForm from '../components/TransactionForm'
 import QuickExpense from '../components/QuickExpense'
+import CategoryManager from '../components/CategoryManager'
+import DebtManager from '../components/DebtManager'
 import TransactionList from '../components/TransactionList'
 import IncomeVsExpenseChart from '../components/IncomeVsExpenseChart'
 import ExpensesByCategoryChart from '../components/ExpensesByCategoryChart'
@@ -89,6 +91,12 @@ export default function Dashboard() {
 
             {/* Schnellausgabe */}
             <QuickExpense />
+
+            {/* Kategorien verwalten */}
+            <CategoryManager />
+
+            {/* Schulden verwalten */}
+            <DebtManager accountId={account.id} />
 
             {/* Letzte Transaktionen */}
             <TransactionList accountId={account.id} />

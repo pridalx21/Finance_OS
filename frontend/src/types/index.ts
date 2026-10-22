@@ -67,3 +67,44 @@ export interface MonthlyTrendEntry {
   income_cents: number
   expense_cents: number
 }
+
+export interface Debt {
+  id: string
+  account_id: string | null
+  creditor: string
+  counterparty: string | null
+  name: string | null
+  title: string | null
+  type: 'OWED' | 'RECEIVABLE'
+  amount_cents: number
+  remaining_cents: number
+  balance_cents: number | null
+  paid_cents: number | null
+  interest_rate: number | null
+  due_date: string | null
+  status: 'OPEN' | 'PAID' | 'CANCELLED' | 'OVERDUE'
+  description: string | null
+  note: string | null
+  created_at: string
+  archived_at: string | null
+}
+
+export interface DebtPayment {
+  id: string
+  debt_id: string
+  amount_cents: number
+  date: string
+  note: string | null
+  created_at: string
+}
+
+export interface DebtSummary {
+  total_debt_cents: number
+  total_receivable_cents: number
+  open_debt_cents: number
+  open_receivable_cents: number
+  total_open_cents: number
+  count: number
+  open_count: number
+  paid_count: number
+}
