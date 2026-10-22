@@ -11,6 +11,7 @@ import type {
   Debt,
   DebtPayment,
   DebtSummary,
+  Reconciliation,
 } from '../types'
 
 const api = axios.create({
@@ -115,4 +116,17 @@ export const debtsApi = {
   payments: (debtId: string) => api.get<DebtPayment[]>(`/debts/${debtId}/payments`).then((r) => r.data),
   pay: (debtId: string, data: { amount_cents: number; date?: string; note?: string }) =>
     api.post<DebtPayment>(`/debts/${debtId}/payments`, data).then((r) => r.data),
+}
+
+// Reconciliation
+export const reconciliationsApi = {
+  list: (accountId?: string) =>
+    api.get<Reconciliation[]>('/reconciliation', { params: accountId ? { account_id: accountId } : {} }).then((r) => r.data),
+  create: (data: {
+    account_id: string
+    actual_balance_cents: number
+    date?: string
+    note?: string
+    idempotency_key?: string
+  }) => api.post<Reconciliation>('/reconciliation', data).then((r) => r.data),
 }

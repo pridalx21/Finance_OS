@@ -64,3 +64,20 @@ def test_get_balance(client: TestClient):
     assert data["total_income_cents"] == 30000
     assert data["total_expense_cents"] == 10000
     assert data["balance_cents"] == 70000
+
+
+def test_negative_initial_balance_rejected(client: TestClient):
+    create_resp = client.post("/api/accounts", json={
+        "name": "Test",
+        "initial_balance_cents": -5000,
+    })
+    assert create_resp.status_code == 422
+
+
+def test_multiple_accounts_total(client: TestClient):
+    a1 = client.post("/api/accounts", json={"name": "A1", "initial_balance_cents": 1000}).json()["id"]
+    a2 = client.post("/api/accounts", json={"name": "A2", "initial_balance_cents": 2000}).json()["id"]
+    assert a1 != a2
+    b1 = client.get(f"/api/accounts/{a1}/balance").json()["balance_cents"]
+    b2 = client.get(f"/api/accounts/{a2}/balance").json()["balance_cents"]
+    assert b1 + b2 == 3000

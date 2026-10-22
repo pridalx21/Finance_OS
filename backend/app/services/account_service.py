@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.models.account import Account
 from app.schemas.account import AccountCreate, AccountBalance
 from app.models.transaction import Transaction
+from app.services.transaction_service import active_transactions
 
 
 class AccountService:
@@ -31,16 +32,10 @@ class AccountService:
         if not account:
             return None
 
-        income = (
-            self.db.query(Transaction)
-            .filter(Transaction.account_id == account_id, Transaction.type == "INCOME")
-            .all()
-        )
-        expense = (
-            self.db.query(Transaction)
-            .filter(Transaction.account_id == account_id, Transaction.type == "EXPENSE")
-            .all()
-        )
+        all_tx = self.db.query(Transaction).filter(Transaction.account_id == account_id).all()
+        active = active_transactions(all_tx)
+        income = [t for t in active if t.type == "INCOME"]
+        expense = [t for t in active if t.type == "EXPENSE"]
 
         total_income = sum(t.amount_cents for t in income)
         total_expense = sum(t.amount_cents for t in expense)

@@ -8,6 +8,10 @@ from app.plugins import get_event_bus
 from app.schemas.transaction import TransactionCreate
 
 
+class IdempotencyConflict(Exception):
+    """Raised when an idempotency key is reused with a differing payload."""
+
+
 def active_transactions(transactions: list[Transaction]) -> list[Transaction]:
     """Drop reversed originals and their reversal entries."""
     reversed_ids = {t.reversed_by for t in transactions if t.reversed_by}
@@ -43,6 +47,17 @@ class TransactionService:
                 .first()
             )
             if existing:
+                # Verify the repeated request matches the original payload.
+                if (
+                    existing.account_id != data.account_id
+                    or existing.type != data.type
+                    or existing.amount_cents != data.amount_cents
+                    or existing.category_id != data.category_id
+                    or (existing.description or None) != (data.description or None)
+                ):
+                    raise IdempotencyConflict(
+                        "Idempotenzschlüssel wurde mit abweichendem Inhalt wiederverwendet"
+                    )
                 return existing
 
         transaction = Transaction(
@@ -95,6 +110,19 @@ class TransactionService:
         if not original or original.reversed_by:
             return None
 
+        reversal_key = f"reversal-{original.id}"
+        existing_reversal = (
+            self.db.query(Transaction)
+            .filter(Transaction.idempotency_key == reversal_key)
+            .first()
+        )
+        if existing_reversal is not None:
+            # Reuse the existing reversal entry (idempotent repeat).
+            original.reversed_by = existing_reversal.id
+            self.db.commit()
+            self.db.refresh(existing_reversal)
+            return existing_reversal
+
         reversal = Transaction(
             account_id=original.account_id,
             type="EXPENSE" if original.type == "INCOME" else "INCOME",
@@ -102,7 +130,7 @@ class TransactionService:
             category_id=original.category_id,
             description=f"Storno: {original.description or ''}",
             date=datetime.now(timezone.utc).replace(tzinfo=None),
-            idempotency_key=f"reversal-{original.id}",
+            idempotency_key=reversal_key,
         )
         self.db.add(reversal)
         self.db.flush()

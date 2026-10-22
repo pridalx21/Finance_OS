@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 import { accountsApi, categoriesApi } from '../services/api'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -8,6 +8,7 @@ import TransactionForm from '../components/TransactionForm'
 import QuickExpense from '../components/QuickExpense'
 import CategoryManager from '../components/CategoryManager'
 import DebtManager from '../components/DebtManager'
+import ReconciliationManager from '../components/ReconciliationManager'
 import TransactionList from '../components/TransactionList'
 import IncomeVsExpenseChart from '../components/IncomeVsExpenseChart'
 import ExpensesByCategoryChart from '../components/ExpensesByCategoryChart'
@@ -26,6 +27,18 @@ export default function Dashboard() {
   })
 
   const account = accounts?.[0]
+
+  const balanceQueries = useQueries({
+    queries: (accounts ?? []).map((a) => ({
+      queryKey: ['balance', a.id],
+      queryFn: () => accountsApi.balance(a.id),
+      enabled: !!a,
+    })),
+  })
+  const totalBalanceCents = balanceQueries.reduce(
+    (sum, q) => sum + (q.data?.balance_cents ?? 0),
+    0,
+  )
 
   const seedMutation = useMutation({
     mutationFn: categoriesApi.seed,
@@ -77,6 +90,20 @@ export default function Dashboard() {
           </Card>
         ) : (
           <>
+            {/* Gesamtsaldo */}
+            {accounts && accounts.length > 1 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Gesamtsaldo aller Konten</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">
+                    {new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'CHF' }).format(totalBalanceCents / 100)}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Kontostand */}
             <BalanceCard accountId={account.id} />
 
@@ -97,6 +124,9 @@ export default function Dashboard() {
 
             {/* Schulden verwalten */}
             <DebtManager accountId={account.id} />
+
+            {/* Kontostandsabgleich */}
+            <ReconciliationManager accountId={account.id} />
 
             {/* Letzte Transaktionen */}
             <TransactionList accountId={account.id} />

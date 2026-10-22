@@ -111,6 +111,39 @@ def test_idempotency(client: TestClient):
     assert resp1.json()["id"] == resp2.json()["id"]
 
 
+def test_idempotency_conflict(client: TestClient):
+    account_id = _create_account(client)
+    key = "conflict-key"
+    client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "INCOME",
+        "amount_cents": 10000,
+        "idempotency_key": key,
+    })
+    response = client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "EXPENSE",
+        "amount_cents": 5000,
+        "idempotency_key": key,
+    })
+    assert response.status_code == 409
+
+
+def test_balance_after_reversal(client: TestClient):
+    account_id = client.post("/api/accounts", json={
+        "name": "Test", "initial_balance_cents": 100000,
+    }).json()["id"]
+    tx_id = client.post("/api/transactions", json={
+        "account_id": account_id, "type": "EXPENSE", "amount_cents": 30000,
+    }).json()["id"]
+    # before reversal
+    bal = client.get(f"/api/accounts/{account_id}/balance").json()
+    assert bal["balance_cents"] == 70000
+    client.post(f"/api/transactions/{tx_id}/reverse")
+    bal2 = client.get(f"/api/accounts/{account_id}/balance").json()
+    assert bal2["balance_cents"] == 100000
+
+
 def test_create_transaction_rejects_unknown_account(client: TestClient):
     response = client.post("/api/transactions", json={
         "account_id": "missing",

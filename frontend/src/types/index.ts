@@ -108,3 +108,14 @@ export interface DebtSummary {
   open_count: number
   paid_count: number
 }
+
+export interface Reconciliation {
+  id: string
+  account_id: string
+  reconciliation_date: string
+  actual_balance_cents: number
+  expected_balance_cents: number
+  difference_cents: number
+  note: string | null
+  created_at: string
+}

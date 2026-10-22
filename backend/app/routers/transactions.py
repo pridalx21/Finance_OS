@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.schemas.transaction import TransactionCreate, TransactionRead, TransactionList
-from app.services.transaction_service import TransactionService
+from app.services.transaction_service import TransactionService, IdempotencyConflict
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -15,6 +15,8 @@ def create_transaction(data: TransactionCreate, db: Session = Depends(get_db)):
         return service.create(data)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except IdempotencyConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

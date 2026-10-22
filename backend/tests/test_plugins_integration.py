@@ -266,3 +266,83 @@ def test_auth_plugin_creates_tables(client):
     me_resp = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me_resp.status_code == 200
     assert me_resp.json()["username"] == "test"
+
+
+def test_debt_open_partial_full_payment(client):
+    account_id = client.post("/api/accounts", json={"name": "Test", "initial_balance_cents": 0}).json()["id"]
+    debt_id = client.post("/api/debts", json={
+        "account_id": account_id,
+        "creditor": "Bank",
+        "type": "OWED",
+        "amount_cents": 10000,
+    }).json()["id"]
+
+    # open
+    d = client.get(f"/api/debts/{debt_id}").json()
+    assert d["remaining_cents"] == 10000
+    assert d["status"] == "OPEN"
+
+    # partial
+    pay = client.post(f"/api/debts/{debt_id}/payments", json={"amount_cents": 3000})
+    assert pay.status_code == 201
+    d2 = client.get(f"/api/debts/{debt_id}").json()
+    assert d2["remaining_cents"] == 7000
+    assert d2["status"] == "OPEN"
+
+    # full
+    client.post(f"/api/debts/{debt_id}/payments", json={"amount_cents": 7000})
+    d3 = client.get(f"/api/debts/{debt_id}").json()
+    assert d3["remaining_cents"] == 0
+    assert d3["status"] == "PAID"
+
+
+def test_debt_payment_does_not_create_transaction(client):
+    account_id = client.post("/api/accounts", json={"name": "Test", "initial_balance_cents": 0}).json()["id"]
+    debt_id = client.post("/api/debts", json={
+        "account_id": account_id,
+        "creditor": "Bank",
+        "type": "OWED",
+        "amount_cents": 5000,
+    }).json()["id"]
+    client.post(f"/api/debts/{debt_id}/payments", json={"amount_cents": 2000})
+    txs = client.get(f"/api/transactions?account_id={account_id}").json()
+    assert txs["total"] == 0
+
+
+def test_debt_summary(client):
+    account_id = client.post("/api/accounts", json={"name": "Test", "initial_balance_cents": 0}).json()["id"]
+    client.post("/api/debts", json={"account_id": account_id, "creditor": "A", "type": "OWED", "amount_cents": 10000})
+    client.post("/api/debts", json={"account_id": account_id, "creditor": "B", "type": "RECEIVABLE", "amount_cents": 4000})
+    s = client.get(f"/api/debts/summary?account_id={account_id}").json()
+    assert s["open_debt_cents"] == 10000
+    assert s["open_receivable_cents"] == 4000
+
+
+def test_reconciliation_no_auto_booking(client):
+    account_id = client.post("/api/accounts", json={"name": "Test", "initial_balance_cents": 100000}).json()["id"]
+    # add expense
+    client.post("/api/transactions", json={"account_id": account_id, "type": "EXPENSE", "amount_cents": 10000})
+    bal_before = client.get(f"/api/accounts/{account_id}/balance").json()["balance_cents"]
+    tx_count_before = client.get(f"/api/transactions?account_id={account_id}").json()["total"]
+
+    rec = client.post("/api/reconciliation", json={
+        "account_id": account_id,
+        "actual_balance_cents": 80000,
+        "note": "test diff",
+    })
+    assert rec.status_code == 201
+    data = rec.json()
+    assert data["expected_balance_cents"] == bal_before
+    assert data["actual_balance_cents"] == 80000
+    assert data["difference_cents"] == 80000 - bal_before
+
+    # no new transaction created
+    tx_count_after = client.get(f"/api/transactions?account_id={account_id}").json()["total"]
+    assert tx_count_after == tx_count_before
+    # balance unchanged
+    bal_after = client.get(f"/api/accounts/{account_id}/balance").json()["balance_cents"]
+    assert bal_after == bal_before
+
+    # list
+    lst = client.get(f"/api/reconciliation?account_id={account_id}").json()
+    assert len(lst) == 1
