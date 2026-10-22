@@ -61,6 +61,48 @@ def test_monthly_trend_shape(client: TestClient):
     assert data == sorted(data, key=lambda e: e["month"])
 
 
+def test_reports_exclude_reversed_transactions(client: TestClient):
+    from datetime import datetime, timezone
+
+    account_id = _create_account(client)
+    cat_id = client.post("/api/categories", json={
+        "name": "Lebensmittel", "type": "EXPENSE",
+    }).json()["id"]
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    current_key = f"{now.year:04d}-{now.month:02d}"
+
+    tx_resp = client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "EXPENSE",
+        "amount_cents": 5000,
+        "category_id": cat_id,
+        "date": now.isoformat(),
+    })
+    tx_id = tx_resp.json()["id"]
+    assert client.post(f"/api/transactions/{tx_id}/reverse").status_code == 201
+
+    by_category = client.get(
+        f"/api/reports/expenses-by-category?account_id={account_id}"
+    ).json()
+    assert by_category == []
+
+    summary = client.get(
+        f"/api/reports/income-vs-expense?account_id={account_id}"
+    ).json()
+    assert summary == {
+        "total_income_cents": 0,
+        "total_expense_cents": 0,
+        "net_cents": 0,
+    }
+
+    trend = client.get(
+        f"/api/reports/monthly-trend?account_id={account_id}&months=6"
+    ).json()
+    current = next(entry for entry in trend if entry["month"] == current_key)
+    assert current["income_cents"] == 0
+    assert current["expense_cents"] == 0
+
+
 def test_monthly_trend_aggregates_current_month(client: TestClient):
     from datetime import datetime, timezone
 

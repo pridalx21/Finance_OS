@@ -1,5 +1,6 @@
 """Plugin registry: discovery, registration and loading."""
 import importlib.util
+import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,6 +8,8 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from app.plugins.base import FinancePlugin
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,9 @@ def _load_module_from_path(name: str, path: Path):
     rather than by import name. The module name is prefixed to avoid clashes.
     """
     module_name = f"finance_plugin_{name}"
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        return existing
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Plugin '{name}' konnte nicht geladen werden: {path}")
@@ -67,11 +73,11 @@ class PluginRegistry:
             return []
 
         found: list[str] = []
-        print(f"[REGISTRY] Discovering plugins in {directory}", file=sys.stderr)
+        logger.debug("Discovering plugins in %s", directory)
         for entry in sorted(directory.iterdir()):
             if entry.name.startswith("_"):
                 continue
-            print(f"[REGISTRY] Found plugin file: {entry.name}", file=sys.stderr)
+            logger.debug("Found plugin file: %s", entry.name)
             if entry.is_file() and entry.suffix == ".py":
                 module = _load_module_from_path(entry.stem, entry)
             elif entry.is_dir() and (entry / "__init__.py").is_file():
@@ -81,13 +87,15 @@ class PluginRegistry:
 
             plugin = getattr(module, "PLUGIN", None)
             if plugin is None:
-                print(f"[REGISTRY] No PLUGIN attribute in {entry.name}, skipping", file=sys.stderr)
+                logger.debug("No PLUGIN attribute in %s, skipping", entry.name)
                 continue
             if not isinstance(plugin, FinancePlugin):
                 raise TypeError(
                     f"PLUGIN in '{entry.name}' muss eine FinancePlugin-Instanz sein"
                 )
-            print(f"[REGISTRY] Registering plugin: {plugin.name}", file=sys.stderr)
+            if plugin.name in self._plugins:
+                continue
+            logger.debug("Registering plugin: %s", plugin.name)
             self.register(plugin, module=module.__name__)
             found.append(plugin.name)
         return found
@@ -103,15 +111,19 @@ class PluginRegistry:
         ``enabled`` is a set of plugin names. When ``None``, every discovered
         plugin is loaded. Returns the names that were actually loaded.
         """
-        import sys
-        print(f"[REGISTRY] load_all called with enabled={enabled}", file=sys.stderr)
+        logger.debug("load_all called with enabled=%s", enabled)
         self.discover(directory)
+        if not hasattr(app.state, "loaded_plugins"):
+            app.state.loaded_plugins = set()
         loaded: list[str] = []
         for name, plugin in self._plugins.items():
-            print(f"[REGISTRY] Loading plugin: {name}", file=sys.stderr)
+            logger.debug("Loading plugin: %s", name)
             if enabled is not None and name not in enabled:
                 continue
+            if name in app.state.loaded_plugins:
+                continue
             plugin.register(app)
+            app.state.loaded_plugins.add(name)
             loaded.append(name)
         return loaded
 

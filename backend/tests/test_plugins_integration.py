@@ -1,20 +1,16 @@
 """Tests for the investments plugin."""
 import pytest
-import sys
-from decimal import Decimal
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.database import Base, get_db
-from app.models.account import Account
 from app.plugins import plugin_registry, PluginRegistry
-from app.db.database import Base
-from app.main import set_plugins_dir_for_testing
-from pathlib import Path
 
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -28,19 +24,10 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 
 # Point to actual plugins directory
 PLUGINS_DIR = Path(__file__).parent.parent / "plugins"
-set_plugins_dir_for_testing(PLUGINS_DIR)
-
-
-def _clear_plugin_modules():
-    """Clear plugin modules from sys.modules to force reload."""
-    to_delete = [k for k in sys.modules if k.startswith('finance_plugin_')]
-    for k in to_delete:
-        del sys.modules[k]
 
 
 # Create a test-specific app with test engine
 def create_test_app():
-    _clear_plugin_modules()
     test_plugin_registry = PluginRegistry()
     
     @asynccontextmanager
@@ -70,8 +57,7 @@ def client():
     # Reset plugin registry
     plugin_registry._plugins.clear()
     plugin_registry._loaded.clear()
-    _clear_plugin_modules()
-    
+
     app = create_test_app()
     
     session = TestingSessionLocal()
@@ -97,10 +83,7 @@ def client():
 
 @pytest.fixture(scope="function")
 def db_session(client):
-    """Get the database session used by the test client."""
-    # The session is created in the client fixture but not exposed.
-    # We create a new session here for direct database access.
-    # Note: This is a separate session from the one used by the test client.
+    """Separate session for direct database assertions."""
     session = TestingSessionLocal()
     try:
         yield session
@@ -108,37 +91,8 @@ def db_session(client):
         session.close()
 
 
-def test_investments_plugin_creates_tables(client, db_session):
+def test_investments_plugin_creates_tables(client):
     """Test that the investments plugin creates its tables."""
-    import sys
-    import os
-    fd = os.open("/tmp/test_debug.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND)
-    os.write(fd, b">>> TEST START <<<\n")
-    os.write(fd, b"[TEST] Starting test_investments_plugin_creates_tables\n")
-    os.write(fd, b">>> BEFORE ROUTES <<<\n")
-    os.close(fd)
-    # Print all routes for debugging - check app.routes (all routes including included routers)
-    routes = []
-    for r in client.app.routes:
-        if hasattr(r, 'path'):
-            routes.append(r.path)
-        elif hasattr(r, 'routes'):
-            for sub in r.routes:
-                if hasattr(sub, 'path'):
-                    routes.append(sub.path)
-    print("Registered routes (app.routes):", routes, file=sys.stderr)
-    
-    # Also check router.routes
-    router_routes = []
-    for r in client.app.router.routes:
-        if hasattr(r, 'path'):
-            router_routes.append(r.path)
-        elif hasattr(r, 'routes'):
-            for sub in r.routes:
-                if hasattr(sub, 'path'):
-                    router_routes.append(sub.path)
-    print("Registered routes (router.routes):", router_routes, file=sys.stderr)
-    
     # Create account
     account_resp = client.post("/api/accounts", json={"name": "Test", "currency": "CHF", "initial_balance_cents": 100000})
     account_id = account_resp.json()["id"]
@@ -159,27 +113,72 @@ def test_investments_plugin_creates_tables(client, db_session):
     assert trade_resp.status_code == 201
     assert trade_resp.json()["type"] == "BUY"
 
-    # Debug: Check what's in the database directly using the db_session fixture
-    from sqlalchemy import select
-    investment_table = Base.metadata.tables.get("plugin_investments_investments")
-    position_table = Base.metadata.tables.get("plugin_investments_positions")
-    if investment_table is not None:
-        investments_in_db = db_session.execute(select(investment_table)).fetchall()
-        print(f"[TEST DEBUG] Investments in DB: {[(i.id, i.symbol) for i in investments_in_db]}", file=sys.stderr, flush=True)
-    if position_table is not None:
-        positions_in_db = db_session.execute(select(position_table)).fetchall()
-        print(f"[TEST DEBUG] Positions in DB: {[(p.id, p.investment_id, p.quantity) for p in positions_in_db]}", file=sys.stderr, flush=True)
-    
     # List positions
     pos_resp = client.get(f"/api/investments/positions?account_id={account_id}")
-    import sys
-    print(f"Positions response: {pos_resp.status_code} - {pos_resp.text}", file=sys.stderr, flush=True)
-    print(f"DEBUG: Response text: {pos_resp.text}", file=sys.stderr, flush=True)
     assert pos_resp.status_code == 200, f"Expected 200, got {pos_resp.status_code}: {pos_resp.text}"
     positions = pos_resp.json()
     assert len(positions) == 1
     assert positions[0]["symbol"] == "AAPL"
     assert positions[0]["quantity"] == "10.00000000"
+
+
+def test_sell_more_than_position_is_atomic(client, db_session):
+    account_id = client.post("/api/accounts", json={"name": "Test"}).json()["id"]
+    inv_id = client.post("/api/investments", json={
+        "symbol": "AAPL", "name": "Apple", "type": "stock",
+    }).json()["id"]
+
+    buy_resp = client.post("/api/investments/trades", json={
+        "account_id": account_id,
+        "investment_id": inv_id,
+        "type": "BUY",
+        "quantity": "1",
+        "price_cents": 10000,
+    })
+    assert buy_resp.status_code == 201
+
+    sell_resp = client.post("/api/investments/trades", json={
+        "account_id": account_id,
+        "investment_id": inv_id,
+        "type": "SELL",
+        "quantity": "2",
+        "price_cents": 10000,
+    })
+    assert sell_resp.status_code == 400
+    assert sell_resp.json()["detail"] == "Nicht genügend Bestand"
+
+    pos_resp = client.get(f"/api/investments/positions?account_id={account_id}")
+    positions = pos_resp.json()
+    assert len(positions) == 1
+    assert positions[0]["quantity"] == "1.00000000"
+
+    trade_count = db_session.execute(
+        text("select count(*) from plugin_investments_trades")
+    ).scalar_one()
+    assert trade_count == 1
+
+
+def test_buy_weighted_average_rounds_half_up(client):
+    account_id = client.post("/api/accounts", json={"name": "Test"}).json()["id"]
+    inv_id = client.post("/api/investments", json={
+        "symbol": "AAPL", "name": "Apple", "type": "stock",
+    }).json()["id"]
+
+    for price_cents in (100, 101):
+        resp = client.post("/api/investments/trades", json={
+            "account_id": account_id,
+            "investment_id": inv_id,
+            "type": "BUY",
+            "quantity": "1",
+            "price_cents": price_cents,
+        })
+        assert resp.status_code == 201
+
+    pos_resp = client.get(f"/api/investments/positions?account_id={account_id}")
+    positions = pos_resp.json()
+    assert len(positions) == 1
+    assert positions[0]["quantity"] == "2.00000000"
+    assert positions[0]["avg_price_cents"] == 101
 
 
 def test_investments_plugin_list_investments(client):
@@ -215,6 +214,39 @@ def test_budget_plugin_creates_tables(client):
     list_resp = client.get(f"/api/budget?account_id={account_id}")
     assert list_resp.status_code == 200
     assert len(list_resp.json()) == 1
+
+
+def test_budget_status_excludes_reversed_expense(client):
+    account_id = client.post(
+        "/api/accounts", json={"name": "Test", "initial_balance_cents": 100000}
+    ).json()["id"]
+    cat_id = client.post(
+        "/api/categories", json={"name": "Test", "type": "EXPENSE"}
+    ).json()["id"]
+    client.post("/api/budget", json={
+        "account_id": account_id,
+        "category_id": cat_id,
+        "name": "Test Budget",
+        "limit_cents": 50000,
+        "period": "monthly",
+        "start_date": "2026-01-01T00:00:00",
+    })
+
+    tx_id = client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "EXPENSE",
+        "amount_cents": 10000,
+        "category_id": cat_id,
+    }).json()["id"]
+
+    before = client.get(f"/api/budget/status?account_id={account_id}").json()
+    assert before[0]["spent_cents"] == 10000
+
+    assert client.post(f"/api/transactions/{tx_id}/reverse").status_code == 201
+
+    after = client.get(f"/api/budget/status?account_id={account_id}").json()
+    assert after[0]["spent_cents"] == 0
+    assert after[0]["remaining_cents"] == 50000
 
 
 def test_auth_plugin_creates_tables(client):

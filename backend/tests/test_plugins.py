@@ -1,4 +1,5 @@
 """Tests for the plugin system."""
+import sys
 from pathlib import Path
 
 import pytest
@@ -88,6 +89,29 @@ def test_load_all_none_enabled_loads_nothing():
     registry = PluginRegistry()
     loaded = registry.load_all(app, FIXTURE_DIR, enabled=set())
     assert loaded == []
+
+
+def test_load_all_is_idempotent_per_app():
+    app = FastAPI()
+    registry = PluginRegistry()
+    assert registry.load_all(app, FIXTURE_DIR) == ["echo"]
+    route_count = len(app.routes)
+
+    assert registry.load_all(app, FIXTURE_DIR) == []
+    assert len(app.routes) == route_count
+    client = TestClient(app)
+    assert client.get("/api/echo").status_code == 200
+
+
+def test_discovery_reuses_loaded_module():
+    first = PluginRegistry()
+    first.discover(FIXTURE_DIR)
+    module = sys.modules["finance_plugin_echo"]
+
+    second = PluginRegistry()
+    second.discover(FIXTURE_DIR)
+    assert sys.modules["finance_plugin_echo"] is module
+    assert second.loaded[0].name == "echo"
 
 
 def test_plugins_endpoint_lists_loaded_plugins(client):

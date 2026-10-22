@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.models.transaction import Transaction
 from app.models.category import Category
+from app.services.transaction_service import active_transactions
 
 
 class ReportService:
@@ -12,11 +13,12 @@ class ReportService:
 
     def expenses_by_category(self, account_id: str) -> list[dict]:
         """Aggregate expenses by category."""
-        transactions = (
+        transactions = active_transactions(
             self.db.query(Transaction)
-            .filter(Transaction.account_id == account_id, Transaction.type == "EXPENSE")
+            .filter(Transaction.account_id == account_id)
             .all()
         )
+        transactions = [t for t in transactions if t.type == "EXPENSE"]
 
         categories = {c.id: c for c in self.db.query(Category).all()}
 
@@ -41,7 +43,7 @@ class ReportService:
 
     def income_vs_expense(self, account_id: str) -> dict:
         """Compare total income vs total expense."""
-        transactions = (
+        transactions = active_transactions(
             self.db.query(Transaction)
             .filter(Transaction.account_id == account_id)
             .all()
@@ -80,14 +82,12 @@ class ReportService:
 
         window_start = datetime(start_year, start_month, 1)
 
-        transactions = (
+        transactions = active_transactions(
             self.db.query(Transaction)
-            .filter(
-                Transaction.account_id == account_id,
-                Transaction.date >= window_start,
-            )
+            .filter(Transaction.account_id == account_id)
             .all()
         )
+        transactions = [t for t in transactions if t.date >= window_start]
 
         income_by_month: dict[str, int] = defaultdict(int)
         expense_by_month: dict[str, int] = defaultdict(int)

@@ -9,9 +9,11 @@ from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, UniqueCons
 from sqlalchemy.orm import Session, relationship
 
 from app.db.database import Base, get_db
-from app.plugins import FinancePlugin, get_event_bus
+from app.plugins import FinancePlugin
 from app.models.account import Account
 from app.models.category import Category
+from app.models.transaction import Transaction
+from app.services.transaction_service import active_transactions
 
 
 # ----- Datenmodell -----
@@ -129,6 +131,9 @@ def budget_status(account_id: str = Query(...), db: Session = Depends(get_db)):
 
     budgets = db.query(Budget).filter(Budget.account_id == account_id).all()
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    transactions = active_transactions(
+        db.query(Transaction).filter(Transaction.account_id == account_id).all()
+    )
 
     result = []
     for b in budgets:
@@ -147,17 +152,12 @@ def budget_status(account_id: str = Query(...), db: Session = Depends(get_db)):
         start = max(b.start_date, period_start)
         end = min(b.end_date, period_end) if b.end_date else period_end
 
-        from app.models.transaction import Transaction
-        query = db.query(Transaction).filter(
-            Transaction.account_id == account_id,
-            Transaction.type == "EXPENSE",
-            Transaction.date >= start,
-            Transaction.date < end,
+        spent = sum(
+            t.amount_cents for t in transactions
+            if t.type == "EXPENSE"
+            and start <= t.date < end
+            and (not b.category_id or t.category_id == b.category_id)
         )
-        if b.category_id:
-            query = query.filter(Transaction.category_id == b.category_id)
-
-        spent = sum(t.amount_cents for t in query.all())
         remaining = max(0, b.limit_cents - spent)
         pct = (spent / b.limit_cents * 100) if b.limit_cents > 0 else 0
 
@@ -170,14 +170,6 @@ def budget_status(account_id: str = Query(...), db: Session = Depends(get_db)):
             percentage_used=round(pct, 1),
         ))
     return result
-
-
-# ----- Event Handler -----
-
-def _on_transaction_created(event):
-    """React to new transactions: could trigger notifications, etc."""
-    # Example: log budget warnings
-    pass
 
 
 # ----- Plugin Class -----
@@ -194,10 +186,6 @@ class BudgetPlugin(FinancePlugin):
 
         # Register routes
         app.include_router(router)
-
-        # Subscribe to events
-        bus = get_event_bus()
-        bus.subscribe("transaction.created", _on_transaction_created)
 
 
 PLUGIN = BudgetPlugin()

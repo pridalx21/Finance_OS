@@ -1,9 +1,20 @@
 """Transaction service."""
-import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from app.models.account import Account
+from app.models.category import Category
 from app.models.transaction import Transaction
+from app.plugins import get_event_bus
 from app.schemas.transaction import TransactionCreate
+
+
+def active_transactions(transactions: list[Transaction]) -> list[Transaction]:
+    """Drop reversed originals and their reversal entries."""
+    reversed_ids = {t.reversed_by for t in transactions if t.reversed_by}
+    return [
+        t for t in transactions
+        if t.reversed_by is None and t.id not in reversed_ids
+    ]
 
 
 class TransactionService:
@@ -11,6 +22,19 @@ class TransactionService:
         self.db = db
 
     def create(self, data: TransactionCreate) -> Transaction:
+        account = self.db.query(Account).filter(Account.id == data.account_id).first()
+        if account is None or account.archived_at is not None:
+            raise LookupError("Konto nicht gefunden")
+
+        if data.category_id:
+            category = self.db.query(Category).filter(Category.id == data.category_id).first()
+            if category is None:
+                raise LookupError("Kategorie nicht gefunden")
+            if category.archived_at is not None:
+                raise ValueError("Kategorie ist archiviert")
+            if category.type != data.type:
+                raise ValueError("Kategorie-Typ passt nicht zur Buchung")
+
         # Check idempotency
         if data.idempotency_key:
             existing = (
@@ -33,6 +57,16 @@ class TransactionService:
         self.db.add(transaction)
         self.db.commit()
         self.db.refresh(transaction)
+        get_event_bus().emit(
+            "transaction.created",
+            {
+                "id": transaction.id,
+                "account_id": transaction.account_id,
+                "type": transaction.type,
+                "amount_cents": transaction.amount_cents,
+                "reversal": False,
+            },
+        )
         return transaction
 
     def get(self, transaction_id: str) -> Transaction | None:
@@ -71,10 +105,19 @@ class TransactionService:
             idempotency_key=f"reversal-{original.id}",
         )
         self.db.add(reversal)
-        self.db.commit()
-        self.db.refresh(reversal)
-
+        self.db.flush()
         original.reversed_by = reversal.id
         self.db.commit()
+        self.db.refresh(reversal)
+        get_event_bus().emit(
+            "transaction.created",
+            {
+                "id": reversal.id,
+                "account_id": reversal.account_id,
+                "type": reversal.type,
+                "amount_cents": reversal.amount_cents,
+                "reversal": True,
+            },
+        )
 
         return reversal

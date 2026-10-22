@@ -1,5 +1,11 @@
 """Tests for transactions API."""
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+
+from app.models.account import Account
+from app.models.transaction import Transaction
 
 
 def _create_account(client: TestClient) -> str:
@@ -103,3 +109,81 @@ def test_idempotency(client: TestClient):
         "idempotency_key": key,
     })
     assert resp1.json()["id"] == resp2.json()["id"]
+
+
+def test_create_transaction_rejects_unknown_account(client: TestClient):
+    response = client.post("/api/transactions", json={
+        "account_id": "missing",
+        "type": "INCOME",
+        "amount_cents": 10000,
+    })
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Konto nicht gefunden"
+
+
+def test_create_transaction_rejects_unknown_category(client: TestClient):
+    account_id = _create_account(client)
+    response = client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "EXPENSE",
+        "amount_cents": 10000,
+        "category_id": "missing",
+    })
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Kategorie nicht gefunden"
+
+
+def test_create_transaction_rejects_category_type_mismatch(client: TestClient):
+    account_id = _create_account(client)
+    cat_id = client.post("/api/categories", json={
+        "name": "Gehalt",
+        "type": "INCOME",
+    }).json()["id"]
+
+    response = client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "EXPENSE",
+        "amount_cents": 10000,
+        "category_id": cat_id,
+    })
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Kategorie-Typ passt nicht zur Buchung"
+
+
+def test_create_transaction_rejects_archived_category(client: TestClient):
+    account_id = _create_account(client)
+    cat_id = client.post("/api/categories", json={
+        "name": "Alt",
+        "type": "EXPENSE",
+    }).json()["id"]
+    client.patch(f"/api/categories/{cat_id}", json={"archived_at": "2026-01-01T00:00:00"})
+
+    response = client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "EXPENSE",
+        "amount_cents": 10000,
+        "category_id": cat_id,
+    })
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Kategorie ist archiviert"
+
+
+def test_db_rejects_transaction_with_unknown_account(db):
+    db.add(Transaction(account_id="missing", type="INCOME", amount_cents=10000))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_db_rejects_deleting_account_with_transactions(db):
+    account = Account(name="Test", currency="CHF", initial_balance_cents=0)
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    db.add(Transaction(account_id=account.id, type="INCOME", amount_cents=10000))
+    db.commit()
+
+    with pytest.raises(IntegrityError):
+        db.execute(text("delete from accounts where id = :id"), {"id": account.id})
+        db.commit()
+    db.rollback()

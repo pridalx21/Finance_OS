@@ -2,21 +2,23 @@
 
 Ergänzt Investment-Tracking ohne Änderungen am Kern.
 """
-import sys
-print(f"[INVESTMENTS PLUGIN] Module loaded: {__name__}, file={__file__}", file=sys.stderr)
-from datetime import datetime
-from decimal import Decimal
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Numeric, UniqueConstraint
 from sqlalchemy.orm import Session, relationship, joinedload
 
 from app.db.database import Base, get_db
 from app.plugins import FinancePlugin
 from app.models.account import Account
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ----- Datenmodell -----
@@ -31,7 +33,7 @@ class Investment(Base):
     type = Column(String(20), nullable=False)  # "stock", "etf", "crypto"
     currency = Column(String(3), nullable=False, default="CHF")
     isin = Column(String(12), nullable=True, unique=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
 
 
 class Position(Base):
@@ -43,7 +45,7 @@ class Position(Base):
     investment_id = Column(String, ForeignKey("plugin_investments_investments.id"), nullable=False)
     quantity = Column(Numeric(precision=18, scale=8), nullable=False, default=0)
     avg_price_cents = Column(Integer, nullable=False, default=0)  # Durchschnittskaufpreis in Cent
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
 
     account = relationship("Account")
     investment = relationship("Investment")
@@ -64,7 +66,7 @@ class Trade(Base):
     quantity = Column(Numeric(precision=18, scale=8), nullable=False)
     price_cents = Column(Integer, nullable=False)  # Stückpreis in Cent
     fee_cents = Column(Integer, nullable=False, default=0)
-    date = Column(DateTime, nullable=False, default=datetime.utcnow)
+    date = Column(DateTime, nullable=False, default=_utcnow)
     note = Column(String(500), nullable=True)
 
     account = relationship("Account")
@@ -90,8 +92,7 @@ class InvestmentRead(BaseModel):
     isin: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TradeCreate(BaseModel):
@@ -116,8 +117,7 @@ class TradeRead(BaseModel):
     date: datetime
     note: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PositionRead(BaseModel):
@@ -130,8 +130,7 @@ class PositionRead(BaseModel):
     market_value_cents: Optional[int] = None
     pnl_cents: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ----- Router -----
@@ -164,14 +163,6 @@ def list_investments(db: Session = Depends(get_db)):
     return db.query(Investment).order_by(Investment.symbol).all()
 
 
-@router.get("/{investment_id}", response_model=InvestmentRead)
-def get_investment(investment_id: str, db: Session = Depends(get_db)):
-    inv = db.query(Investment).filter(Investment.id == investment_id).first()
-    if not inv:
-        raise HTTPException(status_code=404, detail="Investment nicht gefunden")
-    return inv
-
-
 @router.post("/trades", response_model=TradeRead, status_code=201)
 def create_trade(data: TradeCreate, db: Session = Depends(get_db)):
     # Validate
@@ -183,6 +174,38 @@ def create_trade(data: TradeCreate, db: Session = Depends(get_db)):
     if not inv:
         raise HTTPException(status_code=404, detail="Investment nicht gefunden")
 
+    # Load or prepare the position before writing anything.
+    pos = db.query(Position).filter(
+        Position.account_id == data.account_id,
+        Position.investment_id == data.investment_id,
+    ).first()
+    is_new_position = pos is None
+    if is_new_position:
+        pos = Position(
+            id=str(uuid4()),
+            account_id=data.account_id,
+            investment_id=data.investment_id,
+            quantity=Decimal("0"),
+            avg_price_cents=0,
+        )
+
+    if data.type == "SELL":
+        if pos.quantity < data.quantity:
+            raise HTTPException(status_code=400, detail="Nicht genügend Bestand")
+        pos.quantity -= data.quantity
+    else:  # BUY — weighted average price, rounded half up to whole cents
+        total_cost = (
+            pos.quantity * Decimal(pos.avg_price_cents)
+            + data.quantity * Decimal(data.price_cents)
+        )
+        new_quantity = pos.quantity + data.quantity
+        pos.quantity = new_quantity
+        pos.avg_price_cents = int(
+            (total_cost / new_quantity).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+
+    pos.updated_at = _utcnow()
+
     trade = Trade(
         id=str(uuid4()),
         account_id=data.account_id,
@@ -191,41 +214,19 @@ def create_trade(data: TradeCreate, db: Session = Depends(get_db)):
         quantity=data.quantity,
         price_cents=data.price_cents,
         fee_cents=data.fee_cents,
-        date=data.date or datetime.utcnow(),
+        date=data.date or _utcnow(),
         note=data.note,
     )
-    db.add(trade)
-    db.commit()
-    db.refresh(trade)
 
-    # Update position (simplified: average cost method)
-    pos = db.query(Position).filter(
-        Position.account_id == data.account_id,
-        Position.investment_id == data.investment_id,
-    ).first()
-
-    if pos is None:
-        pos = Position(
-            id=str(uuid4()),
-            account_id=data.account_id,
-            investment_id=data.investment_id,
-            quantity=Decimal("0"),
-            avg_price_cents=0,
-        )
+    if is_new_position:
         db.add(pos)
-
-    if data.type == "BUY":
-        # Weighted average price
-        total_cost = pos.quantity * pos.avg_price_cents + data.quantity * data.price_cents
-        pos.quantity += data.quantity
-        pos.avg_price_cents = int(total_cost / pos.quantity) if pos.quantity > 0 else 0
-    else:  # SELL
-        if pos.quantity < data.quantity:
-            raise HTTPException(status_code=400, detail="Nicht genügend Bestand")
-        pos.quantity -= data.quantity
-
-    pos.updated_at = datetime.utcnow()
-    db.commit()
+    db.add(trade)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(trade)
 
     return trade
 
@@ -264,6 +265,14 @@ def list_positions(account_id: str = Query(...), db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
+@router.get("/{investment_id}", response_model=InvestmentRead)
+def get_investment(investment_id: str, db: Session = Depends(get_db)):
+    inv = db.query(Investment).filter(Investment.id == investment_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investment nicht gefunden")
+    return inv
+
+
 # ----- Plugin Class -----
 
 class InvestmentsPlugin(FinancePlugin):
@@ -271,8 +280,6 @@ class InvestmentsPlugin(FinancePlugin):
     version = "0.1.0"
 
     def register(self, app):
-        import sys
-        print(f"[INVESTMENTS PLUGIN] register() called", file=sys.stderr)
         engine = app.state.db_engine
         from app.db.database import Base
         Base.metadata.create_all(bind=engine, tables=[
@@ -280,9 +287,7 @@ class InvestmentsPlugin(FinancePlugin):
             Position.__table__,
             Trade.__table__,
         ])
-        print(f"[INVESTMENTS PLUGIN] router routes: {[r.path for r in router.routes]}", file=sys.stderr)
         app.include_router(router)
-        print(f"[INVESTMENTS PLUGIN] router included", file=sys.stderr)
 
 
 PLUGIN = InvestmentsPlugin()

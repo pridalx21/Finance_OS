@@ -6,17 +6,21 @@ import hashlib
 import hmac
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import Session, relationship
 
 from app.db.database import Base, get_db
 from app.plugins import FinancePlugin
 from app.models.account import Account
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ----- Datenmodell -----
@@ -29,7 +33,7 @@ class User(Base):
     username = Column(String(50), nullable=False, unique=True)
     pin_hash = Column(String(64), nullable=False)  # SHA-256
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
 
 
 class Session(Base):
@@ -40,7 +44,7 @@ class Session(Base):
     user_id = Column(String, ForeignKey("plugin_auth_users.id"), nullable=False)
     token = Column(String(64), nullable=False, unique=True, index=True)
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
 
     user = relationship("User")
 
@@ -68,8 +72,7 @@ class UserRead(BaseModel):
     is_active: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ----- Security helpers -----
@@ -140,7 +143,7 @@ def login(data: LoginRequest, response: Response, db: Session = Depends(get_db))
         id=secrets.token_urlsafe(16),
         user_id=user.id,
         token=token,
-        expires_at=datetime.utcnow() + timedelta(hours=SESSION_TTL_HOURS),
+        expires_at=_utcnow() + timedelta(hours=SESSION_TTL_HOURS),
     )
     db.add(session)
     db.commit()
@@ -178,7 +181,7 @@ def get_current_user(
 
     token = authorization[7:]
     session = db.query(Session).filter(Session.token == token).first()
-    if not session or session.expires_at < datetime.utcnow():
+    if not session or session.expires_at < _utcnow():
         raise HTTPException(status_code=401, detail="Session abgelaufen")
 
     user = db.query(User).filter(User.id == session.user_id).first()

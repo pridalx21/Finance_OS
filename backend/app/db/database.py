@@ -1,8 +1,20 @@
 """Database configuration and session management."""
 import os
+import sqlite3
 from pathlib import Path
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    """Enforce foreign keys on every SQLite connection."""
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 
 # Absolute path to data directory
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]

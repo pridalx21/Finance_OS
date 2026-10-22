@@ -1,5 +1,7 @@
 """Tests for the Event Bus."""
 import pytest
+from fastapi.testclient import TestClient
+
 from app.plugins import Event, get_event_bus, reset_event_bus
 
 
@@ -81,3 +83,54 @@ def test_emit_async_returns_immediately():
     elapsed = time.time() - start
     # emit_async should return immediately (< 0.1s)
     assert elapsed < 0.1
+
+
+def test_transaction_created_emits_event(client: TestClient):
+    bus = get_event_bus()
+    received: list[Event] = []
+
+    def handler(event: Event):
+        received.append(event)
+
+    bus.subscribe("transaction.created", handler)
+    account_id = client.post(
+        "/api/accounts", json={"name": "Test", "initial_balance_cents": 0}
+    ).json()["id"]
+    response = client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "INCOME",
+        "amount_cents": 10000,
+    })
+    assert response.status_code == 201
+    assert len(received) == 1
+    assert received[0].payload == {
+        "id": response.json()["id"],
+        "account_id": account_id,
+        "type": "INCOME",
+        "amount_cents": 10000,
+        "reversal": False,
+    }
+
+
+def test_transaction_reversal_emits_event(client: TestClient):
+    account_id = client.post(
+        "/api/accounts", json={"name": "Test", "initial_balance_cents": 0}
+    ).json()["id"]
+    tx_id = client.post("/api/transactions", json={
+        "account_id": account_id,
+        "type": "EXPENSE",
+        "amount_cents": 10000,
+    }).json()["id"]
+
+    bus = get_event_bus()
+    received: list[Event] = []
+
+    def handler(event: Event):
+        received.append(event)
+
+    bus.subscribe("transaction.created", handler)
+    response = client.post(f"/api/transactions/{tx_id}/reverse")
+    assert response.status_code == 201
+    assert len(received) == 1
+    assert received[0].payload["id"] == response.json()["id"]
+    assert received[0].payload["reversal"] is True

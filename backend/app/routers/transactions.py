@@ -11,7 +11,12 @@ router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 @router.post("", response_model=TransactionRead, status_code=201)
 def create_transaction(data: TransactionCreate, db: Session = Depends(get_db)):
     service = TransactionService(db)
-    return service.create(data)
+    try:
+        return service.create(data)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("", response_model=TransactionList)

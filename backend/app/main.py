@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI):
     # Store engine in app state for plugins
     from app.db.database import engine
     app.state.db_engine = engine
+    app.state.loaded_plugins = set()
     plugin_registry.load_all(app, _get_plugins_dir(), enabled=_enabled_plugins())
     yield
 
