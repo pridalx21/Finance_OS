@@ -39,6 +39,7 @@ export interface Transaction {
   created_at: string
   idempotency_key: string | null
   reversed_by: string | null
+  reverses_id: string | null
 }
 
 export interface TransactionList {
@@ -80,6 +81,9 @@ export interface Debt {
   remaining_cents: number
   balance_cents: number | null
   paid_cents: number | null
+  payment_count: number
+  correction_cents: number
+  is_overdue: boolean
   interest_rate: number | null
   due_date: string | null
   status: 'OPEN' | 'PAID' | 'CANCELLED' | 'OVERDUE'
@@ -96,6 +100,12 @@ export interface DebtPayment {
   date: string
   note: string | null
   created_at: string
+  idempotency_key: string | null
+  /** Booking on an account; null means "recorded without account movement" */
+  transaction_id: string | null
+  cancelled_at: string | null
+  cancel_reason: string | null
+  is_cancelled: boolean
 }
 
 export interface DebtSummary {
@@ -103,10 +113,15 @@ export interface DebtSummary {
   total_receivable_cents: number
   open_debt_cents: number
   open_receivable_cents: number
+  /** Sum of both open positions (not a net value) */
   total_open_cents: number
+  /** Open receivables minus open debts */
+  net_open_cents: number
   count: number
   open_count: number
   paid_count: number
+  cancelled_count: number
+  archived_count: number
 }
 
 export interface Reconciliation {
@@ -118,4 +133,13 @@ export interface Reconciliation {
   difference_cents: number
   note: string | null
   created_at: string
+  /** Bookings that produced the expected balance at the time */
+  basis_transaction_ids: string[]
+}
+
+export interface ExpectedBalance {
+  account_id: string
+  date: string
+  expected_balance_cents: number
+  transaction_count: number
 }

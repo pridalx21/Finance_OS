@@ -4,6 +4,7 @@ import { transactionsApi, categoriesApi, accountsApi } from '../services/api'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { parseAmountToCents } from '../lib/money'
 
 export default function QuickExpense() {
   const [amounts, setAmounts] = useState<Record<string, string>>({})
@@ -20,13 +21,18 @@ export default function QuickExpense() {
   })
 
   const mutation = useMutation({
-    mutationFn: ({ categoryId, amount }: { categoryId: string; amount: string }) =>
-      transactionsApi.create({
+    mutationFn: ({ categoryId, amount }: { categoryId: string; amount: string }) => {
+      const cents = parseAmountToCents(amount)
+      if (cents === null || cents <= 0) {
+        throw new Error('Bitte einen Betrag grösser als 0 eingeben.')
+      }
+      return transactionsApi.create({
         account_id: accounts?.[0]?.id || '',
         type: 'EXPENSE',
-        amount_cents: Math.round(parseFloat(amount) * 100),
+        amount_cents: cents,
         category_id: categoryId,
-      }),
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['balance'] })
@@ -36,7 +42,8 @@ export default function QuickExpense() {
 
   const handleQuickAdd = (categoryId: string) => {
     const amount = amounts[categoryId]
-    if (!amount || parseFloat(amount) <= 0) return
+    const cents = amount ? parseAmountToCents(amount) : null
+    if (cents === null || cents <= 0) return
     mutation.mutate({ categoryId, amount })
     setAmounts((prev) => ({ ...prev, [categoryId]: '' }))
   }
@@ -72,9 +79,10 @@ export default function QuickExpense() {
                   <span className="text-sm font-medium">{cat.name}</span>
                 </div>
                 <Input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="0.00"
+                  aria-label={`Betrag für ${cat.name}`}
                   value={amounts[cat.id] || ''}
                   onChange={(e) =>
                     setAmounts((prev) => ({ ...prev, [cat.id]: e.target.value }))
@@ -97,6 +105,11 @@ export default function QuickExpense() {
             </div>
           ))}
         </div>
+        {mutation.error && (
+          <p className="text-sm text-destructive mt-3" role="alert">
+            {mutation.error.message}
+          </p>
+        )}
       </CardContent>
     </Card>
   )

@@ -1,7 +1,7 @@
 """Transaction model."""
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -23,7 +23,17 @@ class Transaction(Base):
     date = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     idempotency_key = Column(String, unique=True, nullable=True)
+    #: Fingerprint of the client payload, used to detect an idempotency key
+    #: that is reused with different content. NULL for rows written before.
+    idempotency_fingerprint = Column(String(64), nullable=True)
+    #: Id of the transaction that was reversed by this row (storno entry).
     reversed_by = Column(String, nullable=True)
+    #: Id of the transaction this row reverses. NULL for normal bookings.
+    reverses_id = Column(String, ForeignKey("transactions.id"), nullable=True)
 
     account = relationship("Account", back_populates="transactions")
     category = relationship("Category", back_populates="transactions")
+
+    __table_args__ = (
+        Index("ix_transactions_account_date", "account_id", "date"),
+    )

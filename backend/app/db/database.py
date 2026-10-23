@@ -6,6 +6,8 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+from app.db.migrations import run_migrations
+
 
 @event.listens_for(Engine, "connect")
 def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
@@ -23,6 +25,11 @@ _DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 _DEFAULT_DB_PATH = _DATA_DIR / "finance.db"
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_DEFAULT_DB_PATH}")
+
+
+def default_database_path() -> Path:
+    """Path of the database file that is used when DATABASE_URL is not set."""
+    return _DEFAULT_DB_PATH
 
 engine = create_engine(
     DATABASE_URL,
@@ -45,5 +52,10 @@ def get_db():
 
 
 def init_db():
-    """Create all tables."""
+    """Create missing tables and apply pending schema migrations.
+
+    ``create_all`` only creates tables that do not exist yet. Schema changes
+    on existing tables are handled by :mod:`app.db.migrations`.
+    """
     Base.metadata.create_all(bind=engine)
+    run_migrations(engine)

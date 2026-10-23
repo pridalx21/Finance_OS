@@ -12,6 +12,7 @@ import type {
   DebtPayment,
   DebtSummary,
   Reconciliation,
+  ExpectedBalance,
 } from '../types'
 
 const api = axios.create({
@@ -113,9 +114,30 @@ export const debtsApi = {
   delete: (id: string) => api.delete(`/debts/${id}`).then((r) => r.data),
   summary: (accountId?: string) =>
     api.get<DebtSummary>('/debts/summary', { params: accountId ? { account_id: accountId } : {} }).then((r) => r.data),
-  payments: (debtId: string) => api.get<DebtPayment[]>(`/debts/${debtId}/payments`).then((r) => r.data),
-  pay: (debtId: string, data: { amount_cents: number; date?: string; note?: string }) =>
-    api.post<DebtPayment>(`/debts/${debtId}/payments`, data).then((r) => r.data),
+  payments: (debtId: string, includeCancelled = true) =>
+    api
+      .get<DebtPayment[]>(`/debts/${debtId}/payments`, {
+        params: { include_cancelled: includeCancelled },
+      })
+      .then((r) => r.data),
+  pay: (
+    debtId: string,
+    data: {
+      amount_cents: number
+      date?: string
+      note?: string
+      /** Book the payment on an account (expense for a debt, income for a receivable) */
+      create_transaction?: boolean
+      account_id?: string
+      idempotency_key?: string
+    },
+  ) => api.post<DebtPayment>(`/debts/${debtId}/payments`, data).then((r) => r.data),
+  cancelPayment: (paymentId: string, reason?: string) =>
+    api
+      .post<DebtPayment>(`/debts/payments/${paymentId}/cancel`, null, {
+        params: reason ? { reason } : {},
+      })
+      .then((r) => r.data),
 }
 
 // Reconciliation
@@ -127,6 +149,14 @@ export const reconciliationsApi = {
     actual_balance_cents: number
     date?: string
     note?: string
+    create_transaction?: boolean
     idempotency_key?: string
   }) => api.post<Reconciliation>('/reconciliation', data).then((r) => r.data),
+  /** System balance for a cut-off date (today when no date is given) */
+  expectedBalance: (accountId: string, date?: string) =>
+    api
+      .get<ExpectedBalance>('/reconciliation/expected-balance', {
+        params: { account_id: accountId, ...(date ? { date } : {}) },
+      })
+      .then((r) => r.data),
 }

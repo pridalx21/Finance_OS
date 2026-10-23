@@ -46,6 +46,12 @@ async def lifespan(app: FastAPI):
     app.state.loaded_plugins = set()
     plugin_registry.load_all(app, _get_plugins_dir(), enabled=_enabled_plugins())
 
+    # The plugins create their own tables during register(). Run the
+    # migrations once more so plugin tables that already existed in an older
+    # database get the missing columns.
+    from app.db.migrations import run_migrations
+    run_migrations(engine)
+
     # ----- Frontend (built SPA) serving, if a build exists -----
     # Registered AFTER plugins so plugin routes take precedence over the
     # catch-all SPA fallback.

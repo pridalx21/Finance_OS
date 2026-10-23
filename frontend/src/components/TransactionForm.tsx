@@ -20,6 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '../components/ui/dialog'
+import { parseAmountToCents } from '../lib/money'
 
 interface TransactionFormProps {
   type: 'INCOME' | 'EXPENSE'
@@ -45,14 +46,19 @@ export default function TransactionForm({ type, trigger }: TransactionFormProps)
   })
 
   const mutation = useMutation({
-    mutationFn: () =>
-      transactionsApi.create({
+    mutationFn: () => {
+      const cents = parseAmountToCents(amount)
+      if (cents === null || cents <= 0) {
+        throw new Error('Bitte einen Betrag grösser als 0 eingeben.')
+      }
+      return transactionsApi.create({
         account_id: accountId || accounts?.[0]?.id || '',
         type,
-        amount_cents: Math.round(parseFloat(amount || '0') * 100),
+        amount_cents: cents,
         category_id: categoryId || undefined,
         description: description || undefined,
-      }),
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['balance'] })
@@ -102,8 +108,8 @@ export default function TransactionForm({ type, trigger }: TransactionFormProps)
             <Label htmlFor="amount">Betrag (CHF)</Label>
             <Input
               id="amount"
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
@@ -133,6 +139,11 @@ export default function TransactionForm({ type, trigger }: TransactionFormProps)
               placeholder="z. B. Einkauf Migros"
             />
           </div>
+          {mutation.error && (
+            <p className="text-sm text-destructive" role="alert">
+              {mutation.error.message}
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>

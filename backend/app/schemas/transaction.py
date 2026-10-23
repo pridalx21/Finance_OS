@@ -25,6 +25,7 @@ class TransactionRead(BaseModel):
     created_at: datetime
     idempotency_key: Optional[str] = None
     reversed_by: Optional[str] = None
+    reverses_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

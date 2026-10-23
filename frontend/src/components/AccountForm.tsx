@@ -4,6 +4,7 @@ import { accountsApi } from '../services/api'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { parseAmountToCents } from '../lib/money'
 import {
   Dialog,
   DialogContent,
@@ -25,12 +26,17 @@ export default function AccountForm({ trigger }: AccountFormProps) {
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
-    mutationFn: () =>
-      accountsApi.create({
+    mutationFn: () => {
+      const cents = initialBalance.trim() === '' ? 0 : parseAmountToCents(initialBalance)
+      if (cents === null || cents < 0) {
+        throw new Error('Bitte einen gültigen Anfangssaldo eingeben.')
+      }
+      return accountsApi.create({
         name,
         currency: 'CHF',
-        initial_balance_cents: Math.round(parseFloat(initialBalance || '0') * 100),
-      }),
+        initial_balance_cents: cents,
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
       setOpen(false)
@@ -61,13 +67,18 @@ export default function AccountForm({ trigger }: AccountFormProps) {
             <Label htmlFor="balance">Anfangssaldo (CHF)</Label>
             <Input
               id="balance"
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               value={initialBalance}
               onChange={(e) => setInitialBalance(e.target.value)}
               placeholder="0.00"
             />
           </div>
+          {mutation.error && (
+            <p className="text-sm text-destructive" role="alert">
+              {mutation.error.message}
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
