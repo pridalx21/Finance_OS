@@ -75,7 +75,7 @@ export default function ReconciliationManager({ accountId }: Props) {
         <CardTitle>Kontostandsabgleich</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
           <div className="p-3 rounded-md bg-muted/50">
             <p className="text-muted-foreground">
               System-Kontostand{date ? ' (Stichtag)' : ' (heute)'}
@@ -98,7 +98,7 @@ export default function ReconciliationManager({ accountId }: Props) {
           </div>
         </div>
 
-        <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+        <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-end">
           <div>
             <label className="text-xs text-muted-foreground" htmlFor="rec-actual">
               Tatsächlicher Kontostand (CHF)

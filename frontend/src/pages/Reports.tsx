@@ -80,7 +80,7 @@ export default function Reports() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Berichte</h1>
             <p className="text-muted-foreground text-sm">Wochen- und Monatsübersichten</p>
@@ -103,9 +103,10 @@ export default function Reports() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto p-6 space-y-6">
-        <div className="flex gap-2">
-          <button
+      <main className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-2">
+            <button
             className={`px-3 py-1 rounded-md border ${mode === 'week' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
             onClick={() => setMode('week')}
           >
@@ -117,6 +118,7 @@ export default function Reports() {
           >
             Monat
           </button>
+          </div>
           <div className="ml-auto">
             {mode === 'week' ? (
               <input
@@ -146,7 +148,7 @@ export default function Reports() {
 
         {report && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardHeader>
                   <CardTitle>Einnahmen</CardTitle>
@@ -188,7 +190,7 @@ export default function Reports() {
                 <CardHeader>
                   <CardTitle>Vergleich zur Vorperiode ({report.previous_period})</CardTitle>
                 </CardHeader>
-                <CardContent className="grid grid-cols-3 gap-4 text-center text-sm">
+                <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center text-sm">
                   <div>
                     <p className="text-muted-foreground">Einnahmen</p>
                     <p className={report.total_income_cents - report.previous_total_income_cents >= 0 ? 'text-success' : 'text-destructive'}>

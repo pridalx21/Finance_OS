@@ -72,7 +72,7 @@ export default function IncomeVsExpenseChart({ accountId }: IncomeVsExpenseChart
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-4 text-center text-sm">
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center text-sm">
           <div>
             <p className="text-muted-foreground">Einnahmen</p>
             <p className="text-success font-semibold">{formatCHF(data.total_income_cents)}</p>

@@ -144,7 +144,7 @@ export default function DebtManager({ accountId }: Props) {
       <CardContent className="space-y-6">
         {/* Zusammenfassung */}
         {summary && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
             <div className="p-3 rounded-md bg-muted/50">
               <p className="text-muted-foreground">Offene Schulden</p>
               <p className="font-semibold text-destructive">{formatCHF(summary.open_debt_cents)}</p>
@@ -165,7 +165,7 @@ export default function DebtManager({ accountId }: Props) {
         )}
 
         {/* Neue Schuld */}
-        <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+        <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
           <div>
             <label className="text-xs text-muted-foreground" htmlFor="debt-creditor">
               Gläubiger/Schuldner
@@ -263,7 +263,7 @@ export default function DebtManager({ accountId }: Props) {
                       inputMode="decimal"
                       placeholder="Betrag"
                       aria-label={`Zahlungsbetrag für ${debt.creditor}`}
-                      className="h-8 text-sm w-32"
+                      className="h-8 text-sm w-full sm:w-32"
                       value={payAmounts[debt.id] || ''}
                       onChange={(e) =>
                         setPayAmounts((prev) => ({ ...prev, [debt.id]: e.target.value }))
