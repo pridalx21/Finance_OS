@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { accountsApi, categoriesApi } from '../services/api'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -63,7 +64,10 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold">Finance OS</h1>
             <p className="text-muted-foreground text-sm">Persönliches Finanzsystem</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <Link to="/reports" className="text-sm text-muted-foreground hover:text-foreground">
+              Berichte
+            </Link>
             {!account && <AccountForm />}
             {account && (
               <>

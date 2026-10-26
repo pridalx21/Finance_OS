@@ -8,6 +8,9 @@ import type {
   ExpenseByCategory,
   IncomeVsExpense,
   MonthlyTrendEntry,
+  WeeklyTrendEntry,
+  WeeklyReport,
+  MonthlyReport,
   Debt,
   DebtPayment,
   DebtSummary,
@@ -89,6 +92,12 @@ export const reportsApi = {
     api.get<IncomeVsExpense>('/reports/income-vs-expense', { params: { account_id: accountId } }).then((r) => r.data),
   monthlyTrend: (accountId: string, months = 6) =>
     api.get<MonthlyTrendEntry[]>('/reports/monthly-trend', { params: { account_id: accountId, months } }).then((r) => r.data),
+  weekly: (accountId: string, week?: string) =>
+    api.get<WeeklyReport>('/reports/weekly', { params: { account_id: accountId, ...(week ? { week } : {}) } }).then((r) => r.data),
+  weeklyTrend: (accountId: string, weeks = 8) =>
+    api.get<WeeklyTrendEntry[]>('/reports/weekly-trend', { params: { account_id: accountId, weeks } }).then((r) => r.data),
+  monthly: (accountId: string, month?: string) =>
+    api.get<MonthlyReport>('/reports/monthly', { params: { account_id: accountId, ...(month ? { month } : {}) } }).then((r) => r.data),
 }
 
 // Debts

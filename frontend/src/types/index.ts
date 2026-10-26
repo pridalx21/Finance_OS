@@ -69,6 +69,42 @@ export interface MonthlyTrendEntry {
   expense_cents: number
 }
 
+export interface WeeklyTrendEntry {
+  week: string
+  income_cents: number
+  expense_cents: number
+}
+
+export interface WeeklyReport {
+  week: string
+  start_date: string
+  end_date: string
+  total_income_cents: number
+  total_expense_cents: number
+  net_cents: number
+  transaction_count: number
+  expenses_by_category: ExpenseByCategory[]
+  previous_period: string | null
+  previous_total_income_cents: number
+  previous_total_expense_cents: number
+  previous_net_cents: number
+}
+
+export interface MonthlyReport {
+  month: string
+  start_date: string
+  end_date: string
+  total_income_cents: number
+  total_expense_cents: number
+  net_cents: number
+  transaction_count: number
+  expenses_by_category: ExpenseByCategory[]
+  previous_period: string | null
+  previous_total_income_cents: number
+  previous_total_expense_cents: number
+  previous_net_cents: number
+}
+
 export interface Debt {
   id: string
   account_id: string | null

@@ -128,3 +128,121 @@ def test_monthly_trend_aggregates_current_month(client: TestClient):
     # months without transactions are zero-filled
     assert data[0]["income_cents"] == 0
     assert data[0]["expense_cents"] == 0
+
+
+def test_weekly_report_shape(client: TestClient):
+    account_id = _create_account(client)
+    response = client.get(f"/api/reports/weekly?account_id={account_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data.keys()) == {
+        "week", "start_date", "end_date", "total_income_cents",
+        "total_expense_cents", "net_cents", "transaction_count",
+        "expenses_by_category", "previous_period",
+        "previous_total_income_cents", "previous_total_expense_cents",
+        "previous_net_cents",
+    }
+    assert len(data["week"]) == 8  # "YYYY-Www"
+    assert data["transaction_count"] == 0
+
+
+def test_weekly_report_aggregates_current_week(client: TestClient):
+    from datetime import datetime, timezone
+
+    account_id = _create_account(client)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    client.post("/api/transactions", json={
+        "account_id": account_id, "type": "INCOME", "amount_cents": 40000,
+        "date": now.isoformat(),
+    })
+    client.post("/api/transactions", json={
+        "account_id": account_id, "type": "EXPENSE", "amount_cents": 12500,
+        "date": now.isoformat(),
+    })
+
+    response = client.get(f"/api/reports/weekly?account_id={account_id}")
+    data = response.json()
+    assert data["total_income_cents"] == 40000
+    assert data["total_expense_cents"] == 12500
+    assert data["net_cents"] == 27500
+    assert data["transaction_count"] == 2
+
+
+def test_weekly_trend_shape(client: TestClient):
+    account_id = _create_account(client)
+    response = client.get(f"/api/reports/weekly-trend?account_id={account_id}&weeks=4")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 4
+    for entry in data:
+        assert set(entry.keys()) == {"week", "income_cents", "expense_cents"}
+        assert len(entry["week"]) == 8
+    assert data == sorted(data, key=lambda e: e["week"])
+
+
+def test_weekly_report_invalid_week(client: TestClient):
+    account_id = _create_account(client)
+    response = client.get(f"/api/reports/weekly?account_id={account_id}&week=not-a-week")
+    assert response.status_code == 400
+
+
+def test_monthly_report_shape(client: TestClient):
+    account_id = _create_account(client)
+    response = client.get(f"/api/reports/monthly?account_id={account_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data.keys()) == {
+        "month", "start_date", "end_date", "total_income_cents",
+        "total_expense_cents", "net_cents", "transaction_count",
+        "expenses_by_category", "previous_period",
+        "previous_total_income_cents", "previous_total_expense_cents",
+        "previous_net_cents",
+    }
+    assert len(data["month"]) == 7  # "YYYY-MM"
+
+
+def test_monthly_report_aggregates(client: TestClient):
+    from datetime import datetime, timezone
+
+    account_id = _create_account(client)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    client.post("/api/transactions", json={
+        "account_id": account_id, "type": "INCOME", "amount_cents": 40000,
+        "date": now.isoformat(),
+    })
+    client.post("/api/transactions", json={
+        "account_id": account_id, "type": "EXPENSE", "amount_cents": 12500,
+        "date": now.isoformat(),
+    })
+
+    response = client.get(f"/api/reports/monthly?account_id={account_id}")
+    data = response.json()
+    assert data["total_income_cents"] == 40000
+    assert data["total_expense_cents"] == 12500
+    assert data["net_cents"] == 27500
+    assert data["transaction_count"] == 2
+
+
+def test_monthly_report_historical_storno(client: TestClient):
+    account_id = _create_account(client)
+    tx_id = client.post("/api/transactions", json={
+        "account_id": account_id, "type": "EXPENSE", "amount_cents": 30000,
+        "date": "2026-03-15T00:00:00",
+    }).json()["id"]
+    client.post(f"/api/transactions/{tx_id}/reverse")
+
+    # March report still counts the booking (storno happened later)
+    march = client.get(
+        f"/api/reports/monthly?account_id={account_id}&month=2026-03"
+    ).json()
+    assert march["total_expense_cents"] == 30000
+
+    # Current month does not count the storno entry
+    current = client.get(f"/api/reports/monthly?account_id={account_id}").json()
+    assert current["total_expense_cents"] == 0
+
+
+def test_monthly_report_invalid_month(client: TestClient):
+    account_id = _create_account(client)
+    response = client.get(f"/api/reports/monthly?account_id={account_id}&month=2026-13")
+    assert response.status_code == 400
