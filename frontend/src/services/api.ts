@@ -16,6 +16,10 @@ import type {
   DebtSummary,
   Reconciliation,
   ExpectedBalance,
+  Purchase,
+  PurchaseItem,
+  Product,
+  Receipt,
 } from '../types'
 
 const api = axios.create({
@@ -168,4 +172,37 @@ export const reconciliationsApi = {
         params: { account_id: accountId, ...(date ? { date } : {}) },
       })
       .then((r) => r.data),
+}
+
+// Products
+export const productsApi = {
+  list: () => api.get<Product[]>('/purchases/products').then((r) => r.data),
+  create: (data: { gtin?: string; normalized_name: string; brand?: string; package_size?: string; default_category_id?: string }) =>
+    api.post<Product>('/purchases/products', data).then((r) => r.data),
+  byGtin: (gtin: string) => api.get<Product>(`/purchases/products/by-gtin/${gtin}`).then((r) => r.data),
+}
+
+// Receipts
+export const receiptsApi = {
+  create: (data: { file_reference?: string; ocr_text?: string; merchant?: string; purchased_at?: string; total_cents?: number; currency?: string }) =>
+    api.post<Receipt>('/purchases/receipts', data).then((r) => r.data),
+  get: (id: string) => api.get<Receipt>(`/purchases/receipts/${id}`).then((r) => r.data),
+}
+
+// Purchases
+export const purchasesApi = {
+  list: (params?: { account_id?: string; status?: string; include_archived?: boolean }) =>
+    api.get<Purchase[]>('/purchases', { params }).then((r) => r.data),
+  get: (id: string) => api.get<Purchase>(`/purchases/${id}`).then((r) => r.data),
+  create: (data: any) => api.post<Purchase>('/purchases', data).then((r) => r.data),
+  update: (id: string, data: any) => api.patch<Purchase>(`/purchases/${id}`, data).then((r) => r.data),
+  post: (id: string) => api.post<Purchase>(`/purchases/${id}/post`).then((r) => r.data),
+  delete: (id: string) => api.delete(`/purchases/${id}`).then((r) => r.data),
+  setItemCategory: (itemId: string, params: { category_id?: string; purpose?: string; project_ref?: string; save_rule?: boolean; rule_scope?: string; match_value?: string }) =>
+    api.patch<PurchaseItem>(`/purchases/items/${itemId}/category`, null, { params }).then((r) => r.data),
+  merge: (data: { barcode_gtins: string[]; ocr_lines: any[] }) =>
+    api.post<any[]>('/purchases/merge', data).then((r) => r.data),
+  rules: (includeArchived?: boolean) =>
+    api.get<any[]>('/purchases/rules', { params: includeArchived ? { include_archived: true } : {} }).then((r) => r.data),
+  createRule: (data: any) => api.post<any>('/purchases/rules', data).then((r) => r.data),
 }

@@ -179,3 +179,64 @@ export interface ExpectedBalance {
   expected_balance_cents: number
   transaction_count: number
 }
+
+export interface PurchaseItem {
+  id: string
+  purchase_id: string
+  product_id: string | null
+  raw_name: string | null
+  quantity: number
+  unit: string | null
+  unit_price_cents: number | null
+  discount_cents: number
+  line_total_cents: number | null
+  category_id: string | null
+  categorization_source: string
+  categorization_confidence: number | null
+  purpose: string | null
+  project_ref: string | null
+  created_at: string
+}
+
+export interface Purchase {
+  id: string
+  account_id: string | null
+  merchant: string | null
+  purchased_at: string | null
+  currency: string
+  total_cents: number | null
+  items_total_cents: number | null
+  transaction_id: string | null
+  status: 'DRAFT' | 'REVIEWED' | 'POSTED'
+  receipt_id: string | null
+  source: string
+  note: string | null
+  created_at: string
+  archived_at: string | null
+  items: PurchaseItem[]
+}
+
+export interface Product {
+  id: string
+  gtin: string | null
+  normalized_name: string
+  brand: string | null
+  package_size: string | null
+  source: string | null
+  default_category_id: string | null
+  updated_at: string
+  created_at: string
+}
+
+export interface Receipt {
+  id: string
+  file_reference: string | null
+  ocr_text: string | null
+  merchant: string | null
+  purchased_at: string | null
+  total_cents: number | null
+  currency: string | null
+  processing_status: string
+  purchase_id: string | null
+  created_at: string
+}
